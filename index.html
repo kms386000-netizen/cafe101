@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>카페 101 (Cafe 101) - 초정밀 맞춤형 카페 탐색 및 실시간 혼잡도</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#fffbeb',
+              100: '#fef3c7',
+              200: '#fde68a',
+              500: '#f59e0b',
+              600: '#d97706',
+              700: '#b45309',
+              800: '#92400e',
+              900: '#78350f'
+            },
+            congestion: {
+              chill: '#10b981',
+              moderate: '#f59e0b',
+              crowded: '#f97316',
+              full: '#ef4444'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Leaflet CSS & JS for Interactive Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Canvas Confetti -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col">
+
+  <!-- ================= TOP NAVIGATION ================= -->
+  <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm transition-all">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        
+        <!-- Brand Logo & Slogan -->
+        <div class="flex items-center space-x-3 cursor-pointer" onclick="resetToHome()">
+          <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-600 to-amber-400 flex items-center justify-center text-white shadow-md shadow-amber-500/20">
+            <i data-lucide="coffee" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="text-xl font-black tracking-tight text-slate-900">카페 101</span>
+              <span class="px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 rounded-full flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                실시간 혼잡도 LIVE
+              </span>
+            </div>
+            <p class="text-xs text-slate-500 hidden sm:block">초정밀 맞춤형 카페 탐색 및 실시간 좌석 솔루션</p>
+          </div>
+        </div>
+
+        <!-- Center: Area Selector & Search -->
+        <div class="hidden md:flex items-center space-x-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+          <div class="flex items-center gap-1.5 px-3 py-1 bg-white rounded-lg shadow-sm text-xs font-semibold text-slate-700">
+            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-amber-600"></i>
+            <select id="areaSelector" class="bg-transparent outline-none cursor-pointer text-xs font-medium" onchange="changeArea(this.value)">
+              <option value="성수">서울 성수동 카페거리</option>
+              <option value="연남">서울 연남/연희동</option>
+              <option value="강남">서울 강남/역삼역</option>
+              <option value="을지로">서울 을지로 힙지로</option>
+              <option value="신촌">서울 신촌/홍대입구</option>
+            </select>
+          </div>
+          <div class="relative w-64">
+            <input type="text" id="searchInput" placeholder="콘센트 많은 카페, 아인슈페너..." 
+              class="w-full pl-8 pr-3 py-1 text-xs bg-transparent outline-none text-slate-700 placeholder-slate-400"
+              oninput="handleSearch(this.value)">
+            <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2"></i>
+          </div>
+        </div>
+
+        <!-- Right Side: Mode Switch, Premium Toggle, Reward Points, Onboarding -->
+        <div class="flex items-center space-x-2 sm:space-x-3">
+          
+          <!-- Mode Switch: Consumer vs Owner -->
+          <div class="bg-slate-100 p-0.5 rounded-xl flex items-center text-xs font-medium border border-slate-200">
+            <button id="modeConsumerBtn" onclick="setAppMode('consumer')" class="px-2.5 py-1.5 rounded-lg bg-white shadow-xs font-bold text-slate-900 transition-all flex items-center gap-1">
+              <i data-lucide="user" class="w-3.5 h-3.5 text-amber-600"></i>
+              <span class="hidden sm:inline">소비자</span>
+            </button>
+            <button id="modeOwnerBtn" onclick="setAppMode('owner')" class="px-2.5 py-1.5 rounded-lg text-slate-500 hover:text-slate-900 transition-all flex items-center gap-1">
+              <i data-lucide="store" class="w-3.5 h-3.5 text-slate-400"></i>
+              <span class="hidden sm:inline">사장님</span>
+            </button>
+          </div>
+
+          <!-- Premium Subscription Toggle Pill (Simulation) -->
+          <button id="premiumToggleBtn" onclick="togglePremiumStatus()" class="px-2.5 py-1.5 text-xs font-bold rounded-xl border transition-all flex items-center gap-1.5 bg-slate-100 text-slate-600 border-slate-200 hover:border-amber-400">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-500"></i>
+            <span id="premiumStatusText">프리미엄: OFF</span>
+          </button>
+
+          <!-- Reward Points Badge -->
+          <button onclick="openRewardsModal()" class="px-2.5 py-1.5 bg-amber-50 text-amber-800 border border-amber-200/80 rounded-xl text-xs font-bold flex items-center gap-1 hover:bg-amber-100 transition-all shadow-xs">
+            <i data-lucide="coins" class="w-3.5 h-3.5 text-amber-600"></i>
+            <span id="headerPoints">1,200 P</span>
+          </button>
+
+          <!-- Onboarding / Persona Button -->
+          <button onclick="openOnboardingModal()" class="p-2 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-all" title="맞춤 취향 설정 (온보딩)">
+            <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= NOTIFICATION / DEMO ACTION BAR ================= -->
+  <section class="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-amber-200/50 py-2 px-4">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2 text-xs">
+      <div class="flex items-center gap-2 text-slate-700">
+        <span class="px-2 py-0.5 bg-amber-500 text-white font-bold rounded-full text-[10px]">체험 가이드</span>
+        <span id="personaSummaryText">현재 맞춤 온보딩: <strong class="text-amber-800 font-bold">#카공/업무 · #어두운조명 · #콘센트많음</strong></span>
+        <button onclick="openOnboardingModal()" class="text-amber-700 underline font-semibold ml-1 hover:text-amber-900">취향 변경</button>
+      </div>
+      <div class="flex items-center gap-2">
+        <!-- Quick Trigger for PDF Step 2: 만석 시 연관 추천 팝업 -->
+        <button onclick="simulateFullCafePopup()" class="px-2.5 py-1 bg-red-50 text-red-700 border border-red-200 rounded-lg font-semibold hover:bg-red-100 transition-all flex items-center gap-1 shadow-xs">
+          <i data-lucide="alert-triangle" class="w-3 h-3 text-red-500"></i>
+          <span>만석 연관추천 팝업 시뮬레이션</span>
+        </button>
+        <!-- Quick Trigger for PDF Step 6: 사진 리뷰 작성 & 500P 보상 -->
+        <button onclick="openReviewModal('cafe_1')" class="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg font-semibold hover:bg-emerald-100 transition-all flex items-center gap-1 shadow-xs">
+          <i data-lucide="camera" class="w-3 h-3 text-emerald-600"></i>
+          <span>+500P 사진 리뷰 작성</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= MAIN CONTAINER ================= -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col gap-4">
+
+    <!-- ================= CONSUMER VIEW ================= -->
+    <div id="consumerView" class="flex flex-col gap-4">
+
+      <!-- ================= STEP 3: 초정밀 카테고리 필터링 BAR ================= -->
+      <section class="bg-white rounded-2xl p-3 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+        
+        <!-- Filter Tags Chips -->
+        <div class="flex items-center gap-2 overflow-x-auto no-scrollbar w-full sm:w-auto py-1">
+          <button onclick="toggleTagFilter('all')" class="filter-chip active-chip px-3 py-1.5 text-xs rounded-xl font-bold transition-all whitespace-nowrap bg-amber-600 text-white shadow-xs">
+            전체
+          </button>
+          <button onclick="toggleTagFilter('#여유좌석')" class="filter-chip px-3 py-1.5 text-xs rounded-xl font-semibold transition-all whitespace-nowrap bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 border border-transparent hover:border-emerald-200 flex items-center gap-1">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            여유 좌석만 🟢
+          </button>
+          <button onclick="toggleTagFilter('#콘센트많음')" class="filter-chip px-3 py-1.5 text-xs rounded-xl font-semibold transition-all whitespace-nowrap bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-800 border border-transparent hover:border-amber-200">
+            #콘센트많음
+          </button>
+          <button onclick="toggleTagFilter('#쾌적한내부화장실')" class="filter-chip px-3 py-1.5 text-xs rounded-xl font-semibold transition-all whitespace-nowrap bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-800 border border-transparent hover:border-amber-200">
+            #쾌적한내부화장실
+          </button>
+          <button onclick="toggleTagFilter('#어두운조명')" class="filter-chip px-3 py-1.5 text-xs rounded-xl font-semibold transition-all whitespace-nowrap bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-800 border border-transparent hover:border-amber-200">
+            #어두운조명
+          </button>
+          <button onclick="toggleTagFilter('#밝은조명')" class="filter-chip px-3 py-1.5 text-xs rounded-xl font-semibold transition-all whitespace-nowrap bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-800 border border-transparent hover:border-amber-200">
+            #밝은조명
+          </button>
+          <button onclick="toggleTagFilter('#카공/업무')" class="filter-chip px-3 py-1.5 text-xs rounded-xl font-semibold transition-all whitespace-nowrap bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-800 border border-transparent hover:border-amber-200">
+            #카공/업무
+          </button>
+          <button onclick="toggleTagFilter('#유행디저트')" class="filter-chip px-3 py-1.5 text-xs rounded-xl font-semibold transition-all whitespace-nowrap bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-800 border border-transparent hover:border-amber-200">
+            #유행디저트
+          </button>
+        </div>
+
+        <!-- Filter Modal Trigger & Map/List Toggle -->
+        <div class="flex items-center gap-2 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100">
+          <!-- Advanced Detailed Filter Modal Button -->
+          <button onclick="openDetailedFilterModal()" class="px-3 py-1.5 text-xs font-bold bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200/80 rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap shadow-xs">
+            <i data-lucide="filter" class="w-3.5 h-3.5 text-amber-600"></i>
+            <span>초정밀 상세 필터</span>
+          </button>
+
+          <!-- Map / List Toggle -->
+          <div class="bg-slate-100 p-0.5 rounded-xl flex items-center text-xs font-semibold border border-slate-200">
+            <button id="viewMapBtn" onclick="switchView('map')" class="px-2.5 py-1 rounded-lg bg-white shadow-xs text-slate-800 flex items-center gap-1 transition-all">
+              <i data-lucide="map" class="w-3.5 h-3.5 text-amber-600"></i>
+              <span class="hidden sm:inline">지도 뷰</span>
+            </button>
+            <button id="viewListBtn" onclick="switchView('list')" class="px-2.5 py-1 rounded-lg text-slate-500 hover:text-slate-800 flex items-center gap-1 transition-all">
+              <i data-lucide="list" class="w-3.5 h-3.5 text-slate-400"></i>
+              <span class="hidden sm:inline">리스트 뷰</span>
+            </button>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ================= STEP 2: 탐색 영역 (지도 + 리스트 분할 / 스위칭) ================= -->
+      <section class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        
+        <!-- Left: Interactive Leaflet Map (Step 2) -->
+        <div id="mapContainerWrapper" class="lg:col-span-7 bg-white rounded-3xl p-3 border border-slate-200 shadow-sm relative overflow-hidden flex flex-col h-[520px] transition-all">
+          
+          <!-- Map Overlay Badges -->
+          <div class="absolute top-5 left-5 z-20 flex flex-wrap gap-2 pointer-events-none">
+            <div class="glass-panel px-3 py-1.5 rounded-2xl shadow-md border border-slate-200/60 pointer-events-auto flex items-center gap-3 text-xs">
+              <span class="font-bold text-slate-800 flex items-center gap-1">
+                <i data-lucide="activity" class="w-3.5 h-3.5 text-amber-600"></i>
+                실시간 혼잡도 범례:
+              </span>
+              <div class="flex items-center gap-2">
+                <span class="flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
+                  <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> 여유 (&lt;45%)
+                </span>
+                <span class="flex items-center gap-1 text-[11px] font-semibold text-amber-700">
+                  <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> 보통
+                </span>
+                <span class="flex items-center gap-1 text-[11px] font-semibold text-orange-700">
+                  <span class="w-2.5 h-2.5 rounded-full bg-orange-500"></span> 혼잡
+                </span>
+                <span class="flex items-center gap-1 text-[11px] font-semibold text-red-700">
+                  <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span> 만석
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- The Leaflet Map Element -->
+          <div id="leafletMap" class="w-full h-full rounded-2xl z-10"></div>
+
+          <!-- Bottom floating GPS / Re-center button -->
+          <div class="absolute bottom-6 right-6 z-20 flex flex-col gap-2">
+            <button onclick="recenterMap()" class="p-3 bg-white hover:bg-slate-50 text-slate-700 rounded-2xl shadow-lg border border-slate-200 transition-all flex items-center justify-center">
+              <i data-lucide="crosshair" class="w-5 h-5 text-amber-600"></i>
+            </button>
+          </div>
+
+        </div>
+
+        <!-- Right: Cafe List Cards (Step 2 & 4 Entry) -->
+        <div id="listContainerWrapper" class="lg:col-span-5 flex flex-col gap-3.5 h-[520px] overflow-y-auto pr-1">
+          
+          <!-- Results Header -->
+          <div class="flex items-center justify-between px-1">
+            <span class="text-xs font-bold text-slate-500">
+              탐색된 맞춤 카페 <span id="cafeCountBadge" class="text-amber-600 font-extrabold">4</span>곳
+            </span>
+            <span class="text-[11px] text-slate-400">좌석 데이터 실시간 자동 동기화 중 (3초 전)</span>
+          </div>
+
+          <!-- Cafe Card Items (Rendered Dynamically by app.js) -->
+          <div id="cafeCardList" class="flex flex-col gap-3.5">
+            <!-- Dynamic Injection -->
+          </div>
+
+        </div>
+
+      </section>
+
+    </div>
+
+    <!-- ================= OWNER / B2B MODE VIEW ================= -->
+    <div id="ownerView" class="hidden flex flex-col gap-5">
+      
+      <!-- Owner Top Banner -->
+      <section class="bg-gradient-to-r from-slate-900 to-amber-950 text-white rounded-3xl p-6 shadow-md border border-amber-900/40 relative overflow-hidden">
+        <div class="relative z-10 max-w-3xl">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="px-2.5 py-0.5 rounded-full bg-amber-500 text-slate-900 text-[11px] font-black uppercase">소상공인 파트너스</span>
+            <span class="text-xs text-amber-200 font-medium">카페 101 매장 혼잡도 및 홍보 관리 센터</span>
+          </div>
+          <h2 class="text-2xl font-black tracking-tight text-white mb-2">
+            실시간 혼잡도 즉시 수정 &amp; 비수기 타임딜로 좌석 회전율 극대화
+          </h2>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            비어있는 좌석을 실시간으로 알리고, 비수기(평일 14~17시) 타임딜 쿠폰을 카페 101 유저들에게 즉시 배포하여 빈자리를 수익으로 전환하세요.
+          </p>
+        </div>
+        <div class="absolute right-6 -bottom-8 opacity-20 pointer-events-none hidden sm:block">
+          <i data-lucide="store" class="w-56 h-56 text-amber-400"></i>
+        </div>
+      </section>
+
+      <!-- Owner Cafe Selector & Live Control Dashboard -->
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-5">
+        
+        <!-- Live Occupancy Control (Left) -->
+        <div class="md:col-span-7 bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col gap-5">
+          <div class="flex items-center justify-between border-b pb-4 border-slate-100">
+            <div>
+              <h3 class="font-bold text-slate-900 text-base flex items-center gap-2">
+                <i data-lucide="sliders" class="w-4 h-4 text-amber-600"></i>
+                내 매장 실시간 좌석/혼잡도 원클릭 변경
+              </h3>
+              <p class="text-xs text-slate-500">소비자 앱 지도 및 리스트의 혼잡도 색상에 1초 만에 반영됩니다.</p>
+            </div>
+            <select id="ownerCafeSelect" onchange="loadOwnerCafe(this.value)" class="text-xs font-bold border border-slate-200 rounded-xl px-3 py-2 bg-slate-50 text-slate-800 outline-none">
+              <option value="cafe_1">오츠에스프레소 성수점</option>
+              <option value="cafe_2">카페 어반사일런스</option>
+              <option value="cafe_3">루미에르 성수 가든</option>
+              <option value="cafe_4">포레스트 라운지</option>
+            </select>
+          </div>
+
+          <!-- Status Button Group -->
+          <div class="flex flex-col gap-2">
+            <label class="text-xs font-bold text-slate-700">현재 혼잡도 상태 선택</label>
+            <div class="grid grid-cols-4 gap-2">
+              <button onclick="setOwnerCongestion('chill')" class="owner-status-btn p-3 rounded-2xl border-2 flex flex-col items-center gap-1 transition-all border-emerald-500 bg-emerald-50 text-emerald-800 font-bold">
+                <span class="w-3.5 h-3.5 rounded-full bg-emerald-500"></span>
+                <span class="text-xs">여유 (&lt;45%)</span>
+              </button>
+              <button onclick="setOwnerCongestion('moderate')" class="owner-status-btn p-3 rounded-2xl border-2 flex flex-col items-center gap-1 transition-all border-slate-200 text-slate-600 hover:border-amber-400">
+                <span class="w-3.5 h-3.5 rounded-full bg-amber-500"></span>
+                <span class="text-xs">보통 (45~75%)</span>
+              </button>
+              <button onclick="setOwnerCongestion('crowded')" class="owner-status-btn p-3 rounded-2xl border-2 flex flex-col items-center gap-1 transition-all border-slate-200 text-slate-600 hover:border-orange-400">
+                <span class="w-3.5 h-3.5 rounded-full bg-orange-500"></span>
+                <span class="text-xs">혼잡 (75~95%)</span>
+              </button>
+              <button onclick="setOwnerCongestion('full')" class="owner-status-btn p-3 rounded-2xl border-2 flex flex-col items-center gap-1 transition-all border-slate-200 text-slate-600 hover:border-red-400">
+                <span class="w-3.5 h-3.5 rounded-full bg-red-500 animate-pulse"></span>
+                <span class="text-xs">만석 (95%+)</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Available Seats Slider -->
+          <div class="flex flex-col gap-2 pt-2">
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-bold text-slate-700">남은 잔여 좌석 수 설정</span>
+              <span id="ownerSeatsValue" class="font-extrabold text-amber-700 text-sm">14석 남음</span>
+            </div>
+            <input type="range" id="ownerSeatsSlider" min="0" max="30" value="14" 
+              class="w-full accent-amber-600 cursor-pointer"
+              oninput="handleOwnerSeatsChange(this.value)">
+          </div>
+
+          <button onclick="saveOwnerStatus()" class="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-2xl text-xs shadow-md shadow-amber-600/20 transition-all flex items-center justify-center gap-1.5">
+            <i data-lucide="check-circle" class="w-4 h-4"></i>
+            <span>실시간 앱에 즉시 적용하기</span>
+          </button>
+        </div>
+
+        <!-- Issue Flash Coupons & Promotion (Right) -->
+        <div class="md:col-span-5 bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col gap-4">
+          <div class="border-b pb-3 border-slate-100">
+            <h3 class="font-bold text-slate-900 text-base flex items-center gap-2">
+              <i data-lucide="ticket-percent" class="w-4 h-4 text-amber-600"></i>
+              비수기 타임딜 쿠폰 발행
+            </h3>
+            <p class="text-xs text-slate-500">현재 주변 500m 내 카페101 탐색 유저에게 푸시 발송</p>
+          </div>
+
+          <div class="flex flex-col gap-3 text-xs">
+            <div>
+              <label class="font-semibold text-slate-700 block mb-1">쿠폰 타이틀</label>
+              <input type="text" id="couponTitleInput" value="[타임딜] 평일 14~17시 아메리카노 1+1 쿠폰" class="w-full p-2.5 rounded-xl border border-slate-200 outline-none font-medium">
+            </div>
+
+            <div>
+              <label class="font-semibold text-slate-700 block mb-1">발행 수량 & 혜택</label>
+              <div class="grid grid-cols-2 gap-2">
+                <input type="number" id="couponCountInput" value="30" class="p-2.5 rounded-xl border border-slate-200 outline-none font-medium" placeholder="발행 수량 (장)">
+                <select id="couponDiscountInput" class="p-2.5 rounded-xl border border-slate-200 outline-none font-medium">
+                  <option value="1+1">음료 1+1 증정</option>
+                  <option value="20%">디저트 20% 할인</option>
+                  <option value="1000">1,000원 즉시 할인</option>
+                </select>
+              </div>
+            </div>
+
+            <button onclick="issueFlashCoupon()" class="w-full mt-2 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-2xl text-xs shadow-md transition-all flex items-center justify-center gap-1.5">
+              <i data-lucide="send" class="w-4 h-4 text-amber-400"></i>
+              <span>주변 유저 대상 타임딜 즉시 배포</span>
+            </button>
+          </div>
+
+          <!-- Active Issued Coupons List -->
+          <div class="mt-2 pt-3 border-t border-slate-100 flex flex-col gap-2">
+            <span class="text-xs font-bold text-slate-600">현재 활성화된 타임딜 쿠폰</span>
+            <div id="ownerActiveCoupons" class="flex flex-col gap-2">
+              <!-- Injected by app.js -->
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ================= FOOTER ================= -->
+  <footer class="mt-auto bg-white border-t border-slate-200 py-6 text-xs text-slate-500">
+    <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div class="flex items-center gap-2">
+        <span class="font-bold text-slate-800">카페 101 (Cafe 101)</span>
+        <span>·</span>
+        <span>초정밀 맞춤형 카페 탐색 및 실시간 혼잡도 솔루션</span>
+      </div>
+      <div class="flex items-center gap-4 text-slate-400">
+        <span>개인정보처리방침</span>
+        <span>이용약관</span>
+        <span>소상공인 제휴문의</span>
+        <span>© 2026 Cafe 101 Inc.</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ================= MODAL 1: STEP 1 온보딩 모달 (취향 맞춤 설정) ================= -->
+  <div id="onboardingModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in duration-200 flex flex-col gap-5">
+      
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between border-b pb-3 border-slate-100">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+            <i data-lucide="sparkles" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="font-black text-slate-900 text-base">맞춤형 카페 온보딩 (Step 1)</h3>
+            <p class="text-xs text-slate-500">평소 선호 목적과 분위기를 선택해 맞춤 홈을 구성합니다.</p>
+          </div>
+        </div>
+        <button onclick="closeOnboardingModal()" class="text-slate-400 hover:text-slate-600 p-1">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Question 1: 방문 목적 -->
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-bold text-slate-800 flex items-center gap-1">
+          <span class="w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] flex items-center justify-center">1</span>
+          평소 카페를 방문하는 주요 목적은? (복수 선택)
+        </label>
+        <div class="grid grid-cols-3 gap-2" id="onboardingPurposeGroup">
+          <button type="button" onclick="toggleOnboardingChoice(this, 'purpose', '#카공/업무')" class="onboard-chip active-onboard p-2.5 rounded-xl border-2 text-xs font-bold flex flex-col items-center gap-1 border-amber-600 bg-amber-50 text-amber-900">
+            <span>💻 카공/업무</span>
+          </button>
+          <button type="button" onclick="toggleOnboardingChoice(this, 'purpose', '#데이트')" class="onboard-chip p-2.5 rounded-xl border-2 border-slate-200 text-xs font-medium text-slate-600 hover:border-slate-300 flex flex-col items-center gap-1">
+            <span>💑 데이트</span>
+          </button>
+          <button type="button" onclick="toggleOnboardingChoice(this, 'purpose', '#친목/수다')" class="onboard-chip p-2.5 rounded-xl border-2 border-slate-200 text-xs font-medium text-slate-600 hover:border-slate-300 flex flex-col items-center gap-1">
+            <span>☕ 친목/수다</span>
+          </button>
+          <button type="button" onclick="toggleOnboardingChoice(this, 'purpose', '#비즈니스미팅')" class="onboard-chip p-2.5 rounded-xl border-2 border-slate-200 text-xs font-medium text-slate-600 hover:border-slate-300 flex flex-col items-center gap-1">
+            <span>💼 비즈니스</span>
+          </button>
+          <button type="button" onclick="toggleOnboardingChoice(this, 'purpose', '#유행디저트')" class="onboard-chip p-2.5 rounded-xl border-2 border-slate-200 text-xs font-medium text-slate-600 hover:border-slate-300 flex flex-col items-center gap-1">
+            <span>🍰 유행 디저트</span>
+          </button>
+          <button type="button" onclick="toggleOnboardingChoice(this, 'purpose', '#조용한독서')" class="onboard-chip p-2.5 rounded-xl border-2 border-slate-200 text-xs font-medium text-slate-600 hover:border-slate-300 flex flex-col items-center gap-1">
+            <span>🎧 조용한 독서</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Question 2: 조명/분위기 -->
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-bold text-slate-800 flex items-center gap-1">
+          <span class="w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] flex items-center justify-center">2</span>
+          선호하는 매장 조명 및 분위기는?
+        </label>
+        <div class="grid grid-cols-2 gap-2" id="onboardingLightingGroup">
+          <button type="button" onclick="selectSingleChoice(this, 'lighting', '#어두운조명')" class="onboard-chip active-onboard p-2.5 rounded-xl border-2 text-xs font-bold border-amber-600 bg-amber-50 text-amber-900 text-left">
+            <span class="block">🕯️ 어두운 조명 / 무드</span>
+            <span class="text-[10px] text-amber-700 font-normal">차분하고 집중도 높은 웜톤 핀조명</span>
+          </button>
+          <button type="button" onclick="selectSingleChoice(this, 'lighting', '#밝은조명')" class="onboard-chip p-2.5 rounded-xl border-2 border-slate-200 text-xs font-medium text-slate-600 text-left hover:border-slate-300">
+            <span class="block">💡 밝은 조명 / 통창 채광</span>
+            <span class="text-[10px] text-slate-400 font-normal">사진 잘 나오는 화사한 자연광</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Question 3: 필수 편의시설 -->
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-bold text-slate-800 flex items-center gap-1">
+          <span class="w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] flex items-center justify-center">3</span>
+          포기할 수 없는 필수 편의시설 조건
+        </label>
+        <div class="flex flex-wrap gap-2" id="onboardingAmenityGroup">
+          <button type="button" onclick="toggleOnboardingChoice(this, 'amenity', '#콘센트많음')" class="onboard-chip active-onboard px-3 py-1.5 rounded-xl border-2 text-xs font-bold border-amber-600 bg-amber-50 text-amber-900">
+            🔌 콘센트 많음
+          </button>
+          <button type="button" onclick="toggleOnboardingChoice(this, 'amenity', '#쾌적한내부화장실')" class="onboard-chip active-onboard px-3 py-1.5 rounded-xl border-2 text-xs font-bold border-amber-600 bg-amber-50 text-amber-900">
+            🚻 쾌적한 내부 화장실
+          </button>
+          <button type="button" onclick="toggleOnboardingChoice(this, 'amenity', '#주차가능')" class="onboard-chip px-3 py-1.5 rounded-xl border-2 border-slate-200 text-xs font-medium text-slate-600 hover:border-slate-300">
+            🅿️ 주차 가능
+          </button>
+          <button type="button" onclick="toggleOnboardingChoice(this, 'amenity', '#반려동물동반')" class="onboard-chip px-3 py-1.5 rounded-xl border-2 border-slate-200 text-xs font-medium text-slate-600 hover:border-slate-300">
+            🐕 반려동물 동반
+          </button>
+        </div>
+      </div>
+
+      <!-- Submit Button -->
+      <button onclick="applyOnboardingPreferences()" class="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-2xl text-xs shadow-md shadow-amber-600/20 transition-all flex items-center justify-center gap-1.5">
+        <i data-lucide="check" class="w-4 h-4"></i>
+        <span>맞춤형 홈 화면 구성 완료</span>
+      </button>
+
+    </div>
+  </div>
+
+  <!-- ================= MODAL 2: STEP 2 만석 시 연관 추천 카페 팝업 (Full Alternative) ================= -->
+  <div id="fullAlternativeModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-red-200 animate-in fade-in zoom-in duration-200 flex flex-col gap-4">
+      
+      <!-- Top Alert Badge -->
+      <div class="flex items-center gap-2 p-3 bg-red-50 rounded-2xl border border-red-200">
+        <div class="w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center flex-shrink-0">
+          <i data-lucide="alert-octagon" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h4 class="font-bold text-red-900 text-xs">현재 선택하신 카페는 [만석 🔴]입니다!</h4>
+          <p class="text-[11px] text-red-700">대기 예상 시간: 40분 (현재 대기 3팀)</p>
+        </div>
+      </div>
+
+      <div class="text-xs text-slate-600 leading-relaxed">
+        헛걸음하지 마세요! <strong>도보 3분 거리</strong>에 동일한 분위기 및 카공/콘센트 조건을 갖춘 <strong class="text-emerald-700">여유 좌석 카페</strong>를 추천해 드립니다.
+      </div>
+
+      <!-- Recommended Alternative Cafe Card -->
+      <div id="alternativeCafeCardContent" class="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-200 flex flex-col gap-3">
+        <!-- Injected Dynamically -->
+      </div>
+
+      <!-- Actions -->
+      <div class="flex items-center gap-2 pt-1">
+        <button onclick="closeAlternativeModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all">
+          그냥 대기할게요
+        </button>
+        <button id="goToAlternativeBtn" onclick="acceptAlternativeCafe()" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1">
+          <i data-lucide="navigation" class="w-3.5 h-3.5"></i>
+          <span>추천 카페로 이동</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= MODAL 3: STEP 3 초정밀 상세 필터 모달 ================= -->
+  <div id="detailedFilterModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 flex flex-col gap-5 max-h-[90vh] overflow-y-auto">
+      
+      <div class="flex items-center justify-between border-b pb-3 border-slate-100">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+            <i data-lucide="filter" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="font-black text-slate-900 text-base">초정밀 카테고리 필터 (Step 3)</h3>
+            <p class="text-xs text-slate-500">방문 목적과 환경을 디테일하게 설정하여 탐색 결과를 좁힙니다.</p>
+          </div>
+        </div>
+        <button onclick="closeDetailedFilterModal()" class="text-slate-400 hover:text-slate-600 p-1">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- 1. 매장 내부 밝기 슬라이더 -->
+      <div class="flex flex-col gap-2">
+        <div class="flex justify-between items-center text-xs">
+          <span class="font-bold text-slate-700">매장 내부 밝기/조명</span>
+          <span id="filterBrightnessText" class="font-semibold text-amber-700">전체</span>
+        </div>
+        <input type="range" id="filterBrightnessSlider" min="1" max="5" value="3" 
+          class="w-full accent-amber-600 cursor-pointer"
+          oninput="updateBrightnessLabel(this.value)">
+        <div class="flex justify-between text-[10px] text-slate-400">
+          <span>1: 어두운 조명 (무드 핀조명)</span>
+          <span>3: 보통 웜톤</span>
+          <span>5: 매우 밝음 (통창 채광)</span>
+        </div>
+      </div>
+
+      <!-- 2. 매장 소음도 수준 슬라이더 -->
+      <div class="flex flex-col gap-2">
+        <div class="flex justify-between items-center text-xs">
+          <span class="font-bold text-slate-700">소음 허용 수준 (정숙도)</span>
+          <span id="filterNoiseText" class="font-semibold text-amber-700">조용한 편 (도서관~잔잔함)</span>
+        </div>
+        <input type="range" id="filterNoiseSlider" min="1" max="5" value="2" 
+          class="w-full accent-amber-600 cursor-pointer"
+          oninput="updateNoiseLabel(this.value)">
+        <div class="flex justify-between text-[10px] text-slate-400">
+          <span>1: 무소음 독서실급</span>
+          <span>3: 잔잔한 대화/음악</span>
+          <span>5: 활기찬 친목/수다</span>
+        </div>
+      </div>
+
+      <!-- 3. 콘센트 구비율 -->
+      <div class="flex flex-col gap-2">
+        <div class="flex justify-between items-center text-xs">
+          <span class="font-bold text-slate-700">최소 콘센트 구비 좌석 비율</span>
+          <span id="filterOutletText" class="font-semibold text-amber-700">50% 이상</span>
+        </div>
+        <input type="range" id="filterOutletSlider" min="0" max="100" step="25" value="50" 
+          class="w-full accent-amber-600 cursor-pointer"
+          oninput="updateOutletLabel(this.value)">
+      </div>
+
+      <!-- 4. 화장실 조건 -->
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-bold text-slate-700">화장실 조건</label>
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <label class="flex items-center gap-2 p-2.5 border rounded-xl cursor-pointer hover:bg-slate-50">
+            <input type="radio" name="restroomFilter" value="any" checked class="accent-amber-600">
+            <span>상관 없음</span>
+          </label>
+          <label class="flex items-center gap-2 p-2.5 border rounded-xl cursor-pointer hover:bg-slate-50">
+            <input type="radio" name="restroomFilter" value="inside_clean" class="accent-amber-600">
+            <span>#쾌적한내부화장실 (남녀분리)</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center gap-2 pt-2 border-t border-slate-100">
+        <button onclick="resetDetailedFilters()" class="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-2xl text-xs transition-all">
+          초기화
+        </button>
+        <button onclick="applyDetailedFilters()" class="flex-1 py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-2xl text-xs shadow-md shadow-amber-600/20 transition-all flex items-center justify-center gap-1">
+          <i data-lucide="check" class="w-4 h-4"></i>
+          <span id="filterResultCountBtn">필터 적용하여 탐색하기</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= MODAL 4: STEP 4 카페 상세 페이지 & 실시간 좌석도 & 이원화 리뷰 ================= -->
+  <div id="cafeDetailModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-2 sm:p-4">
+    <div class="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] shadow-2xl border border-slate-100 overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+      
+      <!-- Top Image & Quick Badges Header -->
+      <div class="relative h-48 sm:h-56 w-full overflow-hidden bg-slate-900 flex-shrink-0">
+        <img id="detailHeroImg" src="" alt="Cafe" class="w-full h-full object-cover opacity-90">
+        <div class="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/30 to-transparent"></div>
+        
+        <!-- Close Button -->
+        <button onclick="closeCafeDetailModal()" class="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-all">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+
+        <!-- Cafe Header Info Overlay -->
+        <div class="absolute bottom-4 left-4 right-4 text-white z-10 flex items-end justify-between">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <span id="detailCongestionBadge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500 text-white flex items-center gap-1 shadow-xs">
+                <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
+                여유 (14석 남음)
+              </span>
+              <span id="detailCategory" class="text-xs text-slate-300 font-medium">스페셜티 커피</span>
+            </div>
+            <h2 id="detailName" class="text-xl sm:text-2xl font-black tracking-tight text-white">오츠에스프레소 성수점</h2>
+            <p id="detailAddress" class="text-xs text-slate-300 flex items-center gap-1 mt-0.5">
+              <i data-lucide="map-pin" class="w-3 h-3 text-amber-400"></i>
+              서울 성동구 성수동 · 도보 3분 (180m)
+            </p>
+          </div>
+
+          <div class="flex gap-2">
+            <button onclick="openDirectionsModal()" class="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold rounded-xl text-xs flex items-center gap-1 shadow-md transition-all">
+              <i data-lucide="navigation" class="w-3.5 h-3.5"></i>
+              <span>길찾기</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Detail Body Tabs & Scrollable Content -->
+      <div class="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col gap-6">
+
+        <!-- 1. Live Congestion & Interactive Seat Map -->
+        <section class="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-amber-600"></span>
+              <h4 class="font-bold text-slate-900 text-sm">실시간 매장 좌석 배치도 (Live Seat Map)</h4>
+            </div>
+            <span class="text-[11px] text-slate-500">초록색: 즉시 이용 가능</span>
+          </div>
+
+          <!-- Seat Floor Plan Grid (Dynamic) -->
+          <div id="seatMapGrid" class="grid grid-cols-4 sm:grid-cols-4 gap-2.5 p-3 bg-white rounded-xl border border-slate-200">
+            <!-- Injected by app.js -->
+          </div>
+
+          <!-- Hourly Congestion Bar Chart -->
+          <div class="mt-2 pt-2 border-t border-slate-200/60 flex flex-col gap-1.5">
+            <div class="flex justify-between items-center text-[11px] text-slate-500">
+              <span class="font-semibold">시간대별 혼잡도 예측 트렌드</span>
+              <span class="text-amber-700 font-bold">14:00~16:00 피크 예상</span>
+            </div>
+            <div id="hourlyChartContainer" class="flex items-end justify-between h-14 pt-2 gap-1 px-1">
+              <!-- Injected by app.js -->
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. Atmosphere Radar & Detailed Specs -->
+        <section class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+          <div class="p-3 bg-white rounded-xl border border-slate-200 flex flex-col gap-1">
+            <span class="text-slate-400 font-medium flex items-center gap-1">
+              <i data-lucide="sun" class="w-3 h-3 text-amber-500"></i> 조명/밝기
+            </span>
+            <span id="specLighting" class="font-bold text-slate-800">어두운 조명 (2/5)</span>
+          </div>
+          <div class="p-3 bg-white rounded-xl border border-slate-200 flex flex-col gap-1">
+            <span class="text-slate-400 font-medium flex items-center gap-1">
+              <i data-lucide="volume-2" class="w-3 h-3 text-blue-500"></i> 소음 수준
+            </span>
+            <span id="specNoise" class="font-bold text-slate-800">도서관급 정숙 (2/5)</span>
+          </div>
+          <div class="p-3 bg-white rounded-xl border border-slate-200 flex flex-col gap-1">
+            <span class="text-slate-400 font-medium flex items-center gap-1">
+              <i data-lucide="zap" class="w-3 h-3 text-yellow-500"></i> 콘센트 구비율
+            </span>
+            <span id="specOutlet" class="font-bold text-slate-800">전 좌석의 85%</span>
+          </div>
+          <div class="p-3 bg-white rounded-xl border border-slate-200 flex flex-col gap-1">
+            <span class="text-slate-400 font-medium flex items-center gap-1">
+              <i data-lucide="bath" class="w-3 h-3 text-emerald-500"></i> 화장실
+            </span>
+            <span id="specRestroom" class="font-bold text-slate-800">매장 내부 쾌적</span>
+          </div>
+        </section>
+
+        <!-- 3. Signature Menu List -->
+        <section class="flex flex-col gap-2.5">
+          <h4 class="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+            <i data-lucide="utensils" class="w-4 h-4 text-amber-600"></i>
+            대표 시그니처 메뉴
+          </h4>
+          <div id="detailMenuList" class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+            <!-- Injected by app.js -->
+          </div>
+        </section>
+
+        <!-- 4. DUAL REVIEW SECTION (일반 리뷰 vs 프리미엄 날것의 평가 순위) -->
+        <section class="border-t border-slate-200 pt-5 flex flex-col gap-4">
+          
+          <!-- Review Header with Mode Indicator -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <div class="flex items-center gap-2">
+                <h4 class="font-black text-slate-900 text-base">리뷰 및 진성 평가</h4>
+                <span id="reviewModeBadge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
+                  일반 유저 리뷰 모드
+                </span>
+              </div>
+              <p class="text-xs text-slate-500">영수증 및 방문 위치 인증된 고객의 실제 후기</p>
+            </div>
+
+            <!-- Write Review Button -->
+            <button onclick="openReviewModalFromDetail()" class="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold flex items-center gap-1 self-start sm:self-auto transition-all">
+              <i data-lucide="edit-3" class="w-3.5 h-3.5 text-amber-600"></i>
+              <span>사진 리뷰 남기고 500P 받기</span>
+            </button>
+          </div>
+
+          <!-- Premium Raw Reviews Upsell Banner (Shown when not subscribed) -->
+          <div id="premiumUpsellBanner" class="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-purple-500/10 to-amber-500/5 border border-amber-300 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div class="flex items-start gap-3">
+              <div class="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                <i data-lucide="lock" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <h5 class="text-xs font-black text-slate-900">클린봇이 거르지 않은 '날것의 평가 순위' 열람</h5>
+                  <span class="px-1.5 py-0.2 text-[9px] font-bold bg-purple-600 text-white rounded">프리미엄 한정</span>
+                </div>
+                <p class="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                  광고와 스폰서가 배제된 진짜 평점, 장단점 악평/호평 데이터, 의자 딱딱함·소음 진실을 확인하세요.
+                </p>
+              </div>
+            </div>
+            <button onclick="openPremiumSubscriptionModal()" class="w-full sm:w-auto px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs whitespace-nowrap shadow-md transition-all flex items-center justify-center gap-1">
+              <i data-lucide="unlock" class="w-3.5 h-3.5 text-amber-400"></i>
+              <span>날것의 평가 열람하기</span>
+            </button>
+          </div>
+
+          <!-- Unlocked Raw Mode Notice (Shown when Premium is ON) -->
+          <div id="premiumActiveNotice" class="hidden p-3.5 rounded-2xl bg-purple-50 border border-purple-200 flex items-center justify-between text-xs text-purple-900">
+            <div class="flex items-center gap-2 font-bold">
+              <span class="w-2.5 h-2.5 rounded-full bg-purple-600 animate-pulse"></span>
+              <span>🔥 프리미엄 활성화됨: 스폰서 필터 제거된 [날것의 진짜 순위 &amp; 호평/악평] 열람 중</span>
+            </div>
+            <span class="text-[11px] font-semibold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-lg">진짜 평점: 4.1 ★ (재방문율 89%)</span>
+          </div>
+
+          <!-- Review List Container -->
+          <div id="detailReviewList" class="flex flex-col gap-3">
+            <!-- Injected by app.js -->
+          </div>
+
+        </section>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= MODAL 5: STEP 4 프리미엄 구독 유도 모달 ================= -->
+  <div id="premiumSubscriptionModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-amber-300 animate-in fade-in zoom-in duration-200 flex flex-col gap-5 text-center relative overflow-hidden">
+      
+      <!-- Close Button -->
+      <button onclick="closePremiumSubscriptionModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <!-- Badge & Icon -->
+      <div class="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-600 to-amber-400 flex items-center justify-center text-white shadow-lg shadow-amber-500/30">
+        <i data-lucide="shield-check" class="w-8 h-8"></i>
+      </div>
+
+      <div>
+        <span class="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-extrabold uppercase tracking-wide">
+          Cafe 101 Black Pass
+        </span>
+        <h3 class="text-xl font-black text-slate-900 mt-1">프리미엄 구독자 한정 기능</h3>
+        <p class="text-xs text-slate-500 mt-1">
+          광고성 리뷰에 속지 않는 단 하나의 스마트 카페 라이프
+        </p>
+      </div>
+
+      <!-- Feature Comparison List -->
+      <div class="text-left bg-slate-50 p-4 rounded-2xl border border-slate-200/80 flex flex-col gap-2.5 text-xs">
+        <div class="flex items-center gap-2">
+          <i data-lucide="check" class="w-4 h-4 text-emerald-600 flex-shrink-0"></i>
+          <span><strong>모든 광고 및 협찬 추천 완전 제거</strong></span>
+        </div>
+        <div class="flex items-center gap-2">
+          <i data-lucide="check" class="w-4 h-4 text-emerald-600 flex-shrink-0"></i>
+          <span><strong>클린봇이 거르지 않은 날것의 호평/악평 100% 공개</strong> (소음, 좌석 불편, 와이파이 진실)</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <i data-lucide="check" class="w-4 h-4 text-emerald-600 flex-shrink-0"></i>
+          <span><strong>스폰서 없는 진짜 순위 데이터</strong> (재방문율 기반 랭킹)</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <i data-lucide="check" class="w-4 h-4 text-emerald-600 flex-shrink-0"></i>
+          <span><strong>만석 시 좌석 알림 우선 대기권</strong></span>
+        </div>
+      </div>
+
+      <!-- Price Box -->
+      <div class="p-3 bg-amber-50 rounded-2xl border border-amber-200 flex items-center justify-between text-xs">
+        <span class="font-bold text-slate-800">월간 구독권</span>
+        <div>
+          <span class="line-through text-slate-400 text-[11px] mr-1">4,900원</span>
+          <span class="text-base font-black text-amber-700">월 2,900원</span>
+          <span class="text-[10px] text-amber-600 font-bold ml-1">(첫 달 무료)</span>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex flex-col gap-2">
+        <button onclick="subscribePremiumPlan()" class="w-full py-3 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 text-white font-black rounded-2xl text-xs shadow-lg shadow-amber-600/25 transition-all flex items-center justify-center gap-1.5">
+          <i data-lucide="sparkles" class="w-4 h-4"></i>
+          <span>첫 달 0원으로 '날것의 평가' 열람 시작</span>
+        </button>
+        <button onclick="subscribeFreeTrial()" class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs transition-all">
+          평가위원용 1초 무료 체험 모드 활성화
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= MODAL 6: STEP 5 길찾기 & 방문 체크인 모달 ================= -->
+  <div id="directionsModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 flex flex-col gap-4">
+      
+      <div class="flex items-center justify-between border-b pb-3 border-slate-100">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+            <i data-lucide="navigation" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-slate-900 text-sm">목적지 길안내 (Step 5)</h3>
+            <p class="text-xs text-slate-500" id="dirCafeName">오츠에스프레소 성수점</p>
+          </div>
+        </div>
+        <button onclick="closeDirectionsModal()" class="text-slate-400 hover:text-slate-600 p-1">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold text-sm">
+            도보
+          </div>
+          <div>
+            <span class="text-lg font-black text-slate-900">약 3분 소요</span>
+            <span class="text-xs text-slate-500 block">현재 위치로부터 180m</span>
+          </div>
+        </div>
+        <span class="px-2.5 py-1 bg-emerald-100 text-emerald-800 font-bold text-xs rounded-xl">실시간 여유 14석</span>
+      </div>
+
+      <!-- Navigation App Shortcuts -->
+      <div class="grid grid-cols-3 gap-2 text-xs">
+        <button onclick="simulateNavApp('카카오맵')" class="p-2.5 bg-yellow-50 hover:bg-yellow-100 border border-yellow-200 rounded-xl text-yellow-900 font-bold flex flex-col items-center gap-1">
+          <span>카카오맵 연동</span>
+        </button>
+        <button onclick="simulateNavApp('네이버지도')" class="p-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-emerald-900 font-bold flex flex-col items-center gap-1">
+          <span>네이버 지도</span>
+        </button>
+        <button onclick="simulateNavApp('티맵')" class="p-2.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl text-blue-900 font-bold flex flex-col items-center gap-1">
+          <span>TMAP</span>
+        </button>
+      </div>
+
+      <!-- Check-in Trigger for Step 6 -->
+      <div class="pt-2 border-t border-slate-100">
+        <button onclick="handleArrivalCheckIn()" class="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-2xl text-xs shadow-md shadow-amber-600/20 transition-all flex items-center justify-center gap-1.5">
+          <i data-lucide="map-pin-check" class="w-4 h-4"></i>
+          <span>카페 도착 완료! (현장 체크인)</span>
+        </button>
+        <p class="text-[10px] text-center text-slate-400 mt-1.5">도착 인증 시 이용 후 사진 리뷰 혜택 알림이 발송됩니다.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= MODAL 7: STEP 6 사진 리뷰 작성 & 500P 보상 모달 ================= -->
+  <div id="reviewModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 flex flex-col gap-4 max-h-[92vh] overflow-y-auto">
+      
+      <div class="flex items-center justify-between border-b pb-3 border-slate-100">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+            <i data-lucide="camera" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="font-black text-slate-900 text-base">사진 리뷰 작성 &amp; 혜택 보상 (Step 6)</h3>
+            <p class="text-xs text-slate-500">현장 사진과 세부 태그를 평가하여 데이터베이스에 기여합니다.</p>
+          </div>
+        </div>
+        <button onclick="closeReviewModal()" class="text-slate-400 hover:text-slate-600 p-1">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Reward Callout -->
+      <div class="p-3 bg-gradient-to-r from-amber-50 to-emerald-50 rounded-2xl border border-amber-200/80 flex items-center justify-between text-xs">
+        <div class="flex items-center gap-2">
+          <i data-lucide="gift" class="w-4 h-4 text-amber-600"></i>
+          <span class="text-slate-700">작성 완료 시 <strong>500P 적립</strong> + <strong>무료 쿠폰 응모권</strong> 지급!</span>
+        </div>
+        <span class="font-black text-emerald-700 text-xs">+500 P</span>
+      </div>
+
+      <!-- Form Inputs -->
+      <form id="reviewForm" onsubmit="handleReviewSubmit(event)" class="flex flex-col gap-4 text-xs">
+        
+        <!-- 1. Star Rating -->
+        <div class="flex flex-col gap-1">
+          <label class="font-bold text-slate-700">전반적인 만족도 평점</label>
+          <div class="flex items-center gap-2" id="starRatingSelector">
+            <button type="button" onclick="setFormRating(1)" class="star-btn text-2xl text-amber-400">★</button>
+            <button type="button" onclick="setFormRating(2)" class="star-btn text-2xl text-amber-400">★</button>
+            <button type="button" onclick="setFormRating(3)" class="star-btn text-2xl text-amber-400">★</button>
+            <button type="button" onclick="setFormRating(4)" class="star-btn text-2xl text-amber-400">★</button>
+            <button type="button" onclick="setFormRating(5)" class="star-btn text-2xl text-amber-400">★</button>
+            <span id="starRatingLabel" class="ml-2 font-bold text-amber-700 text-sm">5.0점 (최고예요)</span>
+          </div>
+        </div>
+
+        <!-- 2. Photo Upload Simulator -->
+        <div class="flex flex-col gap-1.5">
+          <label class="font-bold text-slate-700 flex items-center gap-1">
+            <i data-lucide="image" class="w-3.5 h-3.5 text-amber-600"></i>
+            현장 사진 첨부 (필수 - 혜택 조건)
+          </label>
+          <div class="grid grid-cols-3 gap-2">
+            <div id="photoPreview1" class="h-20 bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-200 transition-all overflow-hidden relative" onclick="selectSamplePhoto(1)">
+              <i data-lucide="plus" class="w-5 h-5 text-slate-400"></i>
+              <span class="text-[10px] text-slate-500 mt-1">좌석/콘센트 사진</span>
+            </div>
+            <div id="photoPreview2" class="h-20 bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-200 transition-all overflow-hidden relative" onclick="selectSamplePhoto(2)">
+              <i data-lucide="plus" class="w-5 h-5 text-slate-400"></i>
+              <span class="text-[10px] text-slate-500 mt-1">메뉴/영수증 사진</span>
+            </div>
+            <div class="h-20 bg-amber-50 rounded-xl border border-amber-200 flex flex-col items-center justify-center text-center p-2">
+              <span class="text-[10px] text-amber-800 font-bold">클릭 시 샘플 사진이 즉시 자동 첨부됩니다.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Detail Tag Assessment (콘센트, 분위기, 화장실) -->
+        <div class="flex flex-col gap-2">
+          <label class="font-bold text-slate-700">세부 항목 평가 태그 (데이터베이스 기여)</label>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="flex items-center gap-1.5 p-2 bg-slate-50 rounded-xl border border-slate-200">
+              <input type="checkbox" name="reviewTags" value="#콘센트많음" checked class="accent-amber-600">
+              <span>#콘센트많음 (충분함)</span>
+            </label>
+            <label class="flex items-center gap-1.5 p-2 bg-slate-50 rounded-xl border border-slate-200">
+              <input type="checkbox" name="reviewTags" value="#쾌적한내부화장실" checked class="accent-amber-600">
+              <span>#쾌적한내부화장실 (청결함)</span>
+            </label>
+            <label class="flex items-center gap-1.5 p-2 bg-slate-50 rounded-xl border border-slate-200">
+              <input type="checkbox" name="reviewTags" value="#어두운조명" checked class="accent-amber-600">
+              <span>#어두운조명 (무드 집중)</span>
+            </label>
+            <label class="flex items-center gap-1.5 p-2 bg-slate-50 rounded-xl border border-slate-200">
+              <input type="checkbox" name="reviewTags" value="#카공/업무" checked class="accent-amber-600">
+              <span>#카공/업무 적합</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 4. Raw Unfiltered Review Text -->
+        <div class="flex flex-col gap-1">
+          <label class="font-bold text-slate-700">솔직한 방문 후기 (단점/꿀팁 포함 권장)</label>
+          <textarea id="reviewContentInput" rows="3" required placeholder="의자 편안함, 에어컨 바람, 와이파이 속도 등 다른 방문자들을 위한 날것의 진솔한 팁을 남겨주세요." 
+            class="w-full p-3 rounded-xl border border-slate-200 outline-none focus:border-amber-500 font-medium text-xs leading-relaxed"></textarea>
+        </div>
+
+        <!-- Submit Button -->
+        <button type="submit" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-2xl text-xs shadow-md shadow-emerald-600/25 transition-all flex items-center justify-center gap-1.5">
+          <i data-lucide="send" class="w-4 h-4"></i>
+          <span>리뷰 등록하고 500P 적립받기</span>
+        </button>
+
+      </form>
+
+    </div>
+  </div>
+
+  <!-- ================= MODAL 8: REWARDS & WALLET ================= -->
+  <div id="rewardsModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 flex flex-col gap-4">
+      <div class="flex items-center justify-between border-b pb-3 border-slate-100">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+            <i data-lucide="coins" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-slate-900 text-base">내 포인트 &amp; 보유 쿠폰함</h3>
+            <p class="text-xs text-slate-500">리뷰 작성 및 방문 보상으로 지급된 혜택</p>
+          </div>
+        </div>
+        <button onclick="closeRewardsModal()" class="text-slate-400 hover:text-slate-600 p-1">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Point Balance Card -->
+      <div class="p-4 rounded-2xl bg-gradient-to-tr from-amber-600 to-amber-500 text-white shadow-md flex justify-between items-center">
+        <div>
+          <span class="text-xs text-amber-100 font-medium">사용 가능한 카페 101 포인트</span>
+          <h3 id="modalPointsBalance" class="text-2xl font-black mt-0.5">1,200 P</h3>
+        </div>
+        <span class="px-2.5 py-1 bg-white/20 backdrop-blur-md text-white rounded-xl text-xs font-bold">카페 탐험가 Lv.2</span>
+      </div>
+
+      <!-- Coupons List -->
+      <div class="flex flex-col gap-2">
+        <span class="text-xs font-bold text-slate-700">보유 쿠폰 목록</span>
+        <div id="userCouponsList" class="flex flex-col gap-2 text-xs">
+          <!-- Injected by app.js -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main JavaScript Logic -->
+  <script src="app.js"></script>
+</body>
+</html>

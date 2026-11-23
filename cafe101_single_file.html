@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>카페 101 (Cafe 101) - 초정밀 맞춤형 카페 탐색 및 실시간 혼잡도 솔루션</title>
+  
+  <!-- CDN Dependencies -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+
+  <style>
+    body { font-family: "Pretendard", -apple-system, sans-serif; background-color: #f8fafc; color: #1e293b; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.35); opacity: 0.2; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+    .pulse-marker-chill::after {
+      content: ''; position: absolute; width: 100%; height: 100%; top: 0; left: 0;
+      border-radius: 50%; background-color: rgba(16, 185, 129, 0.5);
+      animation: pulse-ring 2s infinite ease-in-out; z-index: -1;
+    }
+    .pulse-marker-full::after {
+      content: ''; position: absolute; width: 100%; height: 100%; top: 0; left: 0;
+      border-radius: 50%; background-color: rgba(239, 68, 68, 0.6);
+      animation: pulse-ring 1.4s infinite ease-in-out; z-index: -1;
+    }
+    .custom-map-marker {
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 9999px; font-weight: 700; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+      cursor: pointer; transition: transform 0.2s ease;
+    }
+    .custom-map-marker:hover { transform: translateY(-3px) scale(1.05); }
+    .glass-panel { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="antialiased min-h-screen flex flex-col">
+
+  <!-- ================= TOP HEADER ================= -->
+  <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3 cursor-pointer" onclick="resetToHome()">
+        <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-600 to-amber-400 flex items-center justify-center text-white shadow-md">
+          <i data-lucide="coffee" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="text-xl font-black text-slate-900 tracking-tight">카페 101</span>
+            <span class="px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 rounded-full flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span> 실시간 혼잡도 LIVE
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 hidden sm:block">초정밀 맞춤형 카페 탐색 및 실시간 좌석 솔루션</p>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-2 sm:space-x-3">
+        <!-- Consumer vs Owner Mode Switch -->
+        <div class="bg-slate-100 p-0.5 rounded-xl flex items-center text-xs font-medium border border-slate-200">
+          <button id="modeConsumerBtn" onclick="setAppMode('consumer')" class="px-2.5 py-1.5 rounded-lg bg-white shadow-xs font-bold text-slate-900">소비자</button>
+          <button id="modeOwnerBtn" onclick="setAppMode('owner')" class="px-2.5 py-1.5 rounded-lg text-slate-500 hover:text-slate-900">사장님</button>
+        </div>
+
+        <!-- Premium VIP Toggle -->
+        <button id="premiumToggleBtn" onclick="togglePremiumStatus()" class="px-2.5 py-1.5 text-xs font-bold rounded-xl border bg-slate-100 text-slate-600 border-slate-200 flex items-center gap-1.5">
+          <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-500"></i>
+          <span id="premiumStatusText">프리미엄: OFF</span>
+        </button>
+
+        <!-- Points Badge -->
+        <button onclick="openRewardsModal()" class="px-2.5 py-1.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold flex items-center gap-1">
+          <i data-lucide="coins" class="w-3.5 h-3.5 text-amber-600"></i>
+          <span id="headerPoints">1,200 P</span>
+        </button>
+
+        <!-- Onboarding Trigger -->
+        <button onclick="openOnboardingModal()" class="p-2 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-xl" title="취향 재설정">
+          <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= NOTIFICATION / DEMO ACTION BAR ================= -->
+  <section class="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-amber-200/50 py-2 px-4">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2 text-xs">
+      <div class="flex items-center gap-2 text-slate-700">
+        <span class="px-2 py-0.5 bg-amber-500 text-white font-bold rounded-full text-[10px]">체험 가이드</span>
+        <span id="personaSummaryText">현재 맞춤 설정: <strong class="text-amber-800 font-bold">#카공/업무 · #어두운조명 · #콘센트많음</strong></span>
+        <button onclick="openOnboardingModal()" class="text-amber-700 underline font-semibold ml-1">취향 변경</button>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="simulateFullCafePopup()" class="px-2.5 py-1 bg-red-50 text-red-700 border border-red-200 rounded-lg font-semibold flex items-center gap-1">
+          <i data-lucide="alert-triangle" class="w-3 h-3 text-red-500"></i>
+          <span>만석 연관추천 팝업 시뮬레이션</span>
+        </button>
+        <button onclick="openReviewModal('cafe_1')" class="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg font-semibold flex items-center gap-1">
+          <i data-lucide="camera" class="w-3 h-3 text-emerald-600"></i>
+          <span>+500P 사진 리뷰 작성</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= MAIN CONTAINER ================= -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-5 flex flex-col gap-4">
+
+    <!-- ================= CONSUMER VIEW ================= -->
+    <div id="consumerView" class="flex flex-col gap-4">
+
+      <!-- Step 3: 초정밀 카테고리 필터 바 -->
+      <section class="bg-white rounded-2xl p-3 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div class="flex items-center gap-2 overflow-x-auto no-scrollbar w-full sm:w-auto py-1">
+          <button onclick="toggleTagFilter('all')" class="filter-chip active-chip px-3 py-1.5 text-xs rounded-xl font-bold bg-amber-600 text-white">전체</button>
+          <button onclick="toggleTagFilter('#여유좌석')" class="filter-chip px-3 py-1.5 text-xs rounded-xl font-semibold bg-slate-100 text-slate-600">여유 좌석만 🟢</button>
+          <button onclick="toggleTagFilter('#콘센트많음')" class="filter-chip px-3 py-1.5 text-xs rounded-xl font-semibold bg-slate-100 text-slate-600">#콘센트많음</button>
+          <button onclick="toggleTagFilter('#쾌적한내부화장실')" class="filter-chip px-3 py-1.5 text-xs rounded-xl font-semibold bg-slate-100 text-slate-600">#쾌적한내부화장실</button>
+          <button onclick="toggleTagFilter('#어두운조명')" class="filter-chip px-3 py-1.5 text-xs rounded-xl font-semibold bg-slate-100 text-slate-600">#어두운조명</button>
+          <button onclick="toggleTagFilter('#카공/업무')" class="filter-chip px-3 py-1.5 text-xs rounded-xl font-semibold bg-slate-100 text-slate-600">#카공/업무</button>
+          <button onclick="toggleTagFilter('#유행디저트')" class="filter-chip px-3 py-1.5 text-xs rounded-xl font-semibold bg-slate-100 text-slate-600">#유행디저트</button>
+        </div>
+
+        <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <button onclick="openDetailedFilterModal()" class="px-3 py-1.5 text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200 rounded-xl flex items-center gap-1">
+            <i data-lucide="filter" class="w-3.5 h-3.5 text-amber-600"></i> 초정밀 상세 필터
+          </button>
+        </div>
+      </section>
+
+      <!-- Step 2: 실시간 혼잡도 지도 + 리스트 영역 -->
+      <section class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        <!-- Interactive Leaflet Map -->
+        <div id="mapContainerWrapper" class="lg:col-span-7 bg-white rounded-3xl p-3 border border-slate-200 shadow-sm relative h-[520px]">
+          <div class="absolute top-5 left-5 z-20 pointer-events-none">
+            <div class="glass-panel px-3 py-1.5 rounded-2xl shadow-md border border-slate-200/80 pointer-events-auto flex items-center gap-2 text-xs">
+              <span class="font-bold text-slate-800">혼잡도:</span>
+              <span class="text-emerald-700 font-bold flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>여유</span>
+              <span class="text-amber-700 font-bold flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-500"></span>보통</span>
+              <span class="text-orange-700 font-bold flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-orange-500"></span>혼잡</span>
+              <span class="text-red-700 font-bold flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>만석</span>
+            </div>
+          </div>
+          <div id="leafletMap" class="w-full h-full rounded-2xl z-10"></div>
+        </div>
+
+        <!-- Right Cafe List -->
+        <div id="listContainerWrapper" class="lg:col-span-5 flex flex-col gap-3 h-[520px] overflow-y-auto pr-1">
+          <div class="flex items-center justify-between px-1">
+            <span class="text-xs font-bold text-slate-500">탐색된 카페 <span id="cafeCountBadge" class="text-amber-600 font-extrabold">4</span>곳</span>
+            <span class="text-[11px] text-slate-400">실시간 좌석 자동 동기화 중</span>
+          </div>
+          <div id="cafeCardList" class="flex flex-col gap-3"></div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ================= OWNER MODE VIEW ================= -->
+    <div id="ownerView" class="hidden flex flex-col gap-5">
+      <section class="bg-gradient-to-r from-slate-900 to-amber-950 text-white rounded-3xl p-6 shadow-md border border-amber-900/40">
+        <h2 class="text-xl font-black mb-1">소상공인 파트너스 센터</h2>
+        <p class="text-xs text-slate-300">실시간 좌석 혼잡도를 원클릭 변경하고 비수기 타임딜 쿠폰을 배포하여 빈자리를 수익으로 전환하세요.</p>
+      </section>
+
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-5">
+        <div class="md:col-span-7 bg-white rounded-3xl p-6 border border-slate-200 flex flex-col gap-4">
+          <div class="flex justify-between items-center border-b pb-3">
+            <h3 class="font-bold text-slate-900 text-sm">내 매장 실시간 혼잡도 즉시 수정</h3>
+            <select id="ownerCafeSelect" onchange="loadOwnerCafe(this.value)" class="text-xs font-bold border rounded-xl px-2 py-1.5 bg-slate-50">
+              <option value="cafe_1">오츠에스프레소 성수점</option>
+              <option value="cafe_2">카페 어반사일런스</option>
+              <option value="cafe_3">루미에르 성수 가든</option>
+              <option value="cafe_4">포레스트 라운지</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-4 gap-2">
+            <button onclick="setOwnerCongestion('chill')" class="owner-status-btn p-3 rounded-2xl border-2 text-xs font-bold border-emerald-500 bg-emerald-50 text-emerald-800">여유 🟢</button>
+            <button onclick="setOwnerCongestion('moderate')" class="owner-status-btn p-3 rounded-2xl border-2 text-xs font-bold border-slate-200">보통 🟡</button>
+            <button onclick="setOwnerCongestion('crowded')" class="owner-status-btn p-3 rounded-2xl border-2 text-xs font-bold border-slate-200">혼잡 🟠</button>
+            <button onclick="setOwnerCongestion('full')" class="owner-status-btn p-3 rounded-2xl border-2 text-xs font-bold border-slate-200">만석 🔴</button>
+          </div>
+          <div class="flex flex-col gap-1">
+            <div class="flex justify-between text-xs font-bold"><span>잔여 좌석 수 설정</span><span id="ownerSeatsValue" class="text-amber-700">14석 남음</span></div>
+            <input type="range" id="ownerSeatsSlider" min="0" max="30" value="14" class="accent-amber-600" oninput="handleOwnerSeatsChange(this.value)">
+          </div>
+          <button onclick="saveOwnerStatus()" class="w-full py-3 bg-amber-600 text-white font-bold rounded-2xl text-xs shadow-md">실시간 앱에 즉시 적용하기</button>
+        </div>
+
+        <div class="md:col-span-5 bg-white rounded-3xl p-6 border border-slate-200 flex flex-col gap-3">
+          <h3 class="font-bold text-slate-900 text-sm border-b pb-2">비수기 타임딜 쿠폰 발행 (주변 유저 대상)</h3>
+          <input type="text" id="couponTitleInput" value="[타임딜] 평일 14~17시 아메리카노 1+1 쿠폰" class="p-2.5 rounded-xl border text-xs">
+          <button onclick="issueFlashCoupon()" class="py-3 bg-slate-900 text-white font-bold rounded-2xl text-xs">타임딜 즉시 배포</button>
+          <div id="ownerActiveCoupons" class="flex flex-col gap-2 mt-2"></div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ================= MODALS ================= -->
+  
+  <!-- Step 2: 만석 시 연관 추천 팝업 -->
+  <div id="fullAlternativeModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-red-200 flex flex-col gap-4">
+      <div class="p-3 bg-red-50 rounded-2xl border border-red-200 text-xs">
+        <h4 class="font-bold text-red-900">현재 선택하신 카페는 [만석 🔴]입니다!</h4>
+        <p class="text-red-700">대기 예상 시간: 40분 (현재 대기 3팀)</p>
+      </div>
+      <p class="text-xs text-slate-600">헛걸음하지 마세요! <strong>도보 3분 거리</strong>에 동일 분위기/콘센트 조건을 갖춘 <strong class="text-emerald-700">여유 좌석 카페</strong>를 추천합니다.</p>
+      <div id="alternativeCafeCardContent" class="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 flex flex-col gap-2"></div>
+      <div class="flex gap-2">
+        <button onclick="closeAlternativeModal()" class="flex-1 py-2.5 bg-slate-100 rounded-xl text-xs font-bold">그냥 대기</button>
+        <button id="goToAlternativeBtn" class="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold">추천 카페로 이동</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 4: 카페 상세 페이지 & 실시간 좌석도 & 이원화 리뷰 -->
+  <div id="cafeDetailModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-2 sm:p-4">
+    <div class="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] shadow-2xl overflow-hidden flex flex-col">
+      <div class="relative h-48 w-full bg-slate-900 flex-shrink-0">
+        <img id="detailHeroImg" src="" class="w-full h-full object-cover opacity-90">
+        <button onclick="closeCafeDetailModal()" class="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center">✕</button>
+        <div class="absolute bottom-4 left-4 right-4 text-white flex justify-between items-end">
+          <div>
+            <span id="detailCongestionBadge" class="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-500">여유</span>
+            <h2 id="detailName" class="text-xl font-black mt-1">카페 이름</h2>
+            <p id="detailAddress" class="text-xs text-slate-300">위치 정보</p>
+          </div>
+          <button onclick="openDirectionsModal()" class="px-3 py-2 bg-amber-500 text-slate-900 font-bold rounded-xl text-xs">길찾기 (도보)</button>
+        </div>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-5 flex flex-col gap-5">
+        <!-- Live Seat Map -->
+        <section class="bg-slate-50 p-4 rounded-2xl border">
+          <div class="flex justify-between items-center mb-2">
+            <h4 class="font-bold text-slate-900 text-xs">실시간 매장 좌석 배치도 (Live Seat Map)</h4>
+            <span class="text-[11px] text-slate-500">초록색: 즉시 이용 가능</span>
+          </div>
+          <div id="seatMapGrid" class="grid grid-cols-4 gap-2 p-3 bg-white rounded-xl border"></div>
+        </section>
+
+        <!-- Dual Review System -->
+        <section class="flex flex-col gap-3">
+          <div class="flex justify-between items-center">
+            <h4 class="font-bold text-slate-900 text-sm">방문자 리뷰 및 평가</h4>
+            <button onclick="openReviewModalFromDetail()" class="px-3 py-1 bg-amber-50 text-amber-800 border rounded-xl text-xs font-bold">+500P 사진 리뷰 작성</button>
+          </div>
+
+          <!-- Upsell Banner -->
+          <div id="premiumUpsellBanner" class="p-4 rounded-2xl bg-gradient-to-r from-amber-100 to-purple-100 border border-amber-300 flex justify-between items-center">
+            <div>
+              <h5 class="text-xs font-black text-slate-900">클린봇이 거르지 않은 '날것의 평가 순위' 열람</h5>
+              <p class="text-[11px] text-slate-600">광고 배제 진짜 평점, 장단점 악평/호평(좌석 불편, 와이파이 진실) 확인</p>
+            </div>
+            <button onclick="subscribeFreeTrial()" class="px-3 py-2 bg-slate-900 text-white font-bold rounded-xl text-xs whitespace-nowrap">날것의 평가 열람하기</button>
+          </div>
+
+          <div id="premiumActiveNotice" class="hidden p-3 bg-purple-50 text-purple-900 rounded-2xl border border-purple-200 text-xs font-bold">
+            🔥 프리미엄 활성화됨: 스폰서 필터 제거된 [날것의 진짜 순위 &amp; 호평/악평] 열람 중 (진짜 평점: 4.1★)
+          </div>
+
+          <div id="detailReviewList" class="flex flex-col gap-2"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 5: 길찾기 & 도착 체크인 모달 -->
+  <div id="directionsModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4">
+      <h3 class="font-bold text-slate-900 text-base">목적지 길안내 (Step 5)</h3>
+      <div class="p-4 bg-slate-50 rounded-2xl flex justify-between items-center text-xs">
+        <div><span class="text-base font-black">도보 약 3분 (180m)</span><span class="block text-slate-500">실시간 여유 14석 남음</span></div>
+      </div>
+      <button onclick="handleArrivalCheckIn()" class="w-full py-3 bg-amber-600 text-white font-bold rounded-2xl text-xs">매장 도착 완료! (현장 체크인)</button>
+    </div>
+  </div>
+
+  <!-- Step 6: 사진 리뷰 작성 & 500P 적립 모달 -->
+  <div id="reviewModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl flex flex-col gap-4 text-xs">
+      <div class="flex justify-between items-center border-b pb-2">
+        <h3 class="font-black text-slate-900 text-sm">사진 리뷰 작성 &amp; 혜택 보상 (Step 6)</h3>
+        <button onclick="closeReviewModal()">✕</button>
+      </div>
+      <div class="p-2.5 bg-amber-50 rounded-xl text-amber-800 font-bold flex justify-between">
+        <span>작성 완료 시 <strong>500P 적립</strong> + <strong>무료 쿠폰 응모권</strong> 지급!</span>
+        <span>+500 P</span>
+      </div>
+      <form onsubmit="handleReviewSubmit(event)" class="flex flex-col gap-3">
+        <div>
+          <label class="font-bold block mb-1">현장 사진 첨부 (필수)</label>
+          <div class="h-20 bg-slate-100 rounded-xl border-2 border-dashed flex items-center justify-center cursor-pointer" onclick="selectSamplePhoto()">
+            <span id="photoPreviewText" class="text-slate-400">클릭 시 현장 사진 자동 첨부</span>
+          </div>
+        </div>
+        <textarea id="reviewContentInput" rows="3" required placeholder="에어컨 바람, 의자 착좌감, 와이파이 속도 등 솔직한 날것의 후기를 남겨주세요." class="p-3 border rounded-xl outline-none"></textarea>
+        <button type="submit" class="py-3.5 bg-emerald-600 text-white font-bold rounded-2xl shadow-md">리뷰 등록하고 500P 적립받기</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= EMBEDDED JAVASCRIPT ================= -->
+  <script>
+    const INITIAL_CAFES = [
+      {
+        id: "cafe_1", name: "오츠에스프레소 성수점", category: "스페셜티 커피 & 아인슈페너", area: "서울 성동구 성수동",
+        distance: "180m", walkTime: "3분", lat: 37.5446, lng: 127.0560, congestion: "chill", congestionLabel: "여유",
+        occupancyRate: 38, availableSeats: 14, totalSeats: 24, rating: 4.8, trueRating: 4.5,
+        tags: ["#카공/업무", "#콘센트많음", "#어두운조명", "#쾌적한내부화장실"],
+        atmosphere: "어두운조명", brightnessScore: 2, noiseLevel: 2, outletRatio: 85, restroom: "매장 내부 (남녀분리, 쾌적)",
+        img: "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=600&q=80",
+        seats: [
+          { id: "S1", type: "창가 1인석", outlet: true, occupied: false },
+          { id: "S2", type: "창가 1인석", outlet: true, occupied: false },
+          { id: "S3", type: "2인 테이블", outlet: true, occupied: true },
+          { id: "S4", type: "4인 롱테이블", outlet: true, occupied: false }
+        ],
+        cleanReviews: [{ author: "성수러버", rating: 5, date: "2026.11.20", content: "아인슈페너 크림이 예술이에요! 조용해서 책 읽기에도 정말 좋아요." }],
+        rawReviews: [{ author: "팩트폭격기", rating: 3.8, date: "2026.11.21", content: "커피 맛과 크림은 상위 1% 인정. 근데 주말 오후 2시 넘으면 만석이고 웨이팅 심함. 창가 3번 좌석은 에어컨 직타석이라 추움.", tags: ["#주말웨이팅극심", "#3번좌석춥다"] }]
+      },
+      {
+        id: "cafe_2", name: "카페 어반사일런스", category: "하이엔드 워크 & 스터디 카페", area: "서울 성동구 뚝섬로",
+        distance: "250m", walkTime: "4분", lat: 37.5458, lng: 127.0545, congestion: "full", congestionLabel: "만석",
+        occupancyRate: 98, availableSeats: 0, totalSeats: 35, rating: 4.9, trueRating: 4.2,
+        tags: ["#카공/업무", "#콘센트많음", "#어두운조명", "#쾌적한내부화장실"],
+        atmosphere: "어두운조명", brightnessScore: 2, noiseLevel: 1, outletRatio: 100, restroom: "매장 내부 남녀분리",
+        img: "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=600&q=80",
+        seats: [{ id: "A1", type: "1인석", outlet: true, occupied: true }],
+        cleanReviews: [{ author: "개발자H", rating: 5, date: "2026.11.22", content: "와이파이 빠르고 집중 끝판왕입니다." }],
+        rawReviews: [{ author: "익명리뷰어", rating: 3.5, date: "2026.11.19", content: "평일 오후에도 자리 잡기 극악. 키보드 타이핑 소리 눈치보일 정도.", tags: ["#자리잡기극악"] }]
+      },
+      {
+        id: "cafe_3", name: "루미에르 성수 가든", category: "유행 디저트 & 로맨틱 데이트", area: "서울 성동구 서울숲길",
+        distance: "320m", walkTime: "5분", lat: 37.5432, lng: 127.0532, congestion: "moderate", congestionLabel: "보통",
+        occupancyRate: 65, availableSeats: 9, totalSeats: 28, rating: 4.7, trueRating: 4.4,
+        tags: ["#데이트", "#유행디저트", "#밝은조명", "#쾌적한내부화장실"],
+        atmosphere: "밝은조명", brightnessScore: 5, noiseLevel: 3, outletRatio: 30, restroom: "매장 내부",
+        img: "https://images.unsplash.com/photo-1521017432531-fbd92d768814?auto=format&fit=crop&w=600&q=80",
+        seats: [{ id: "G1", type: "테라스석", outlet: false, occupied: false }],
+        cleanReviews: [{ author: "소담", rating: 5, date: "2026.11.20", content: "데이트하기 최고! 디저트 비주얼 대박." }],
+        rawReviews: [{ author: "솔직미식가", rating: 4.1, date: "2026.11.16", content: "크루키는 맛있는데 콘센트가 없어서 작업용으론 비추.", tags: ["#콘센트부족"] }]
+      },
+      {
+        id: "cafe_4", name: "포레스트 라운지 (대체 추천)", category: "조용한 로스터리 & 모던 카공", area: "서울 성동구 아차산로",
+        distance: "220m", walkTime: "3분", lat: 37.5451, lng: 127.0578, congestion: "chill", congestionLabel: "여유",
+        occupancyRate: 25, availableSeats: 22, totalSeats: 30, rating: 4.6, trueRating: 4.6,
+        tags: ["#카공/업무", "#콘센트많음", "#어두운조명", "#쾌적한내부화장실"],
+        atmosphere: "어두운조명", brightnessScore: 2, noiseLevel: 2, outletRatio: 90, restroom: "매장 내부",
+        img: "https://images.unsplash.com/photo-1442512595331-e89e73853f31?auto=format&fit=crop&w=600&q=80",
+        seats: [{ id: "F1", type: "1인석", outlet: true, occupied: false }],
+        cleanReviews: [{ author: "성수방랑자", rating: 5, date: "2026.11.19", content: "만석 카페 피해서 왔는데 대만족!" }],
+        rawReviews: [{ author: "숨은맛집헌터", rating: 4.7, date: "2026.11.14", content: "골목 안쪽이라 널널함. 콘센트 천국.", tags: ["#숨은명소"] }]
+      }
+    ];
+
+    const state = {
+      cafes: JSON.parse(JSON.stringify(INITIAL_CAFES)),
+      filteredCafes: JSON.parse(JSON.stringify(INITIAL_CAFES)),
+      selectedCafe: null,
+      isPremium: false,
+      userPoints: 1200,
+      map: null,
+      markers: {}
+    };
+
+    document.addEventListener("DOMContentLoaded", () => {
+      initMap();
+      renderList();
+      updateMarkers();
+      lucide.createIcons();
+    });
+
+    function initMap() {
+      state.map = L.map('leafletMap', { zoomControl: false }).setView([37.5446, 127.0555], 16);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(state.map);
+    }
+
+    function updateMarkers() {
+      if (!state.map) return;
+      Object.values(state.markers).forEach(m => state.map.removeLayer(m));
+      state.markers = {};
+      const colors = { chill: 'bg-emerald-500 pulse-marker-chill', moderate: 'bg-amber-500', crowded: 'bg-orange-500', full: 'bg-red-500 pulse-marker-full' };
+      state.filteredCafes.forEach(c => {
+        const isFull = c.congestion === 'full';
+        const icon = L.divIcon({
+          className: 'custom-pin',
+          html: `<div class="custom-map-marker px-2.5 py-1 ${colors[c.congestion]} text-white text-[11px] border-2 border-white">${isFull ? '🔴' : '☕'} ${c.name.split(' ')[0]} (${c.availableSeats}석)</div>`,
+          iconSize: [110, 30]
+        });
+        const m = L.marker([c.lat, c.lng], { icon }).addTo(state.map);
+        m.on('click', () => isFull ? showFullAlternativePopup(c) : openCafeDetail(c.id));
+        state.markers[c.id] = m;
+      });
+    }
+
+    function renderList() {
+      const container = document.getElementById("cafeCardList");
+      document.getElementById("cafeCountBadge").textContent = state.filteredCafes.length;
+      container.innerHTML = state.filteredCafes.map(c => `
+        <div class="bg-white rounded-2xl p-4 border hover:border-amber-400 cursor-pointer flex gap-3.5 transition-all" onclick="${c.congestion === 'full' ? `showFullAlternativePopup(state.cafes.find(x=>x.id==='${c.id}'))` : `openCafeDetail('${c.id}')`}">
+          <img src="${c.img}" class="w-24 h-24 rounded-xl object-cover flex-shrink-0">
+          <div class="flex-1 flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between items-center text-[11px]">
+                <span class="text-slate-400">${c.category}</span>
+                <span class="font-bold ${c.congestion === 'chill' ? 'text-emerald-700' : c.congestion === 'full' ? 'text-red-700' : 'text-amber-700'}">${c.congestionLabel} (${c.availableSeats}석)</span>
+              </div>
+              <h3 class="font-bold text-sm text-slate-900 mt-0.5">${c.name}</h3>
+              <p class="text-[11px] text-slate-500">📍 ${c.distance} · 도보 ${c.walkTime} · ★ ${state.isPremium ? c.trueRating : c.rating}</p>
+            </div>
+            <div class="flex gap-1">${c.tags.slice(0, 3).map(t => `<span class="bg-slate-100 px-1.5 py-0.5 rounded text-[10px] text-slate-600">${t}</span>`).join('')}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function showFullAlternativePopup(fullCafe) {
+      const alt = state.cafes.find(c => c.id === 'cafe_4');
+      const box = document.getElementById("alternativeCafeCardContent");
+      box.innerHTML = `
+        <div class="flex justify-between items-center text-xs"><span class="font-bold text-emerald-800">AI 추천: 여유 좌석 🟢</span><span>도보 ${alt.walkTime} (${alt.distance})</span></div>
+        <div class="flex gap-2 items-center"><img src="${alt.img}" class="w-14 h-14 rounded-xl object-cover"><div><h4 class="font-bold text-xs">${alt.name}</h4><p class="text-emerald-700 font-black text-xs">${alt.availableSeats}석 즉시 이용 가능</p></div></div>
+      `;
+      document.getElementById("goToAlternativeBtn").onclick = () => { closeAlternativeModal(); openCafeDetail(alt.id); };
+      document.getElementById("fullAlternativeModal").classList.remove("hidden");
+    }
+
+    function closeAlternativeModal() { document.getElementById("fullAlternativeModal").classList.add("hidden"); }
+
+    function openCafeDetail(id) {
+      const c = state.cafes.find(x => x.id === id);
+      state.selectedCafe = c;
+      document.getElementById("detailHeroImg").src = c.img;
+      document.getElementById("detailName").textContent = c.name;
+      document.getElementById("detailAddress").textContent = `${c.area} · 도보 ${c.walkTime} (${c.distance})`;
+      
+      // Render Seat Map
+      document.getElementById("seatMapGrid").innerHTML = c.seats.map(s => `
+        <div class="p-2 border rounded-xl text-center ${s.occupied ? 'bg-slate-200 text-slate-400' : 'bg-emerald-50 text-emerald-800 font-bold'}">
+          <span class="block text-[10px]">${s.id}</span><span class="text-[9px]">${s.occupied ? '사용중' : '비어있음'}</span>
+        </div>
+      `).join('');
+
+      renderReviews(c);
+      document.getElementById("cafeDetailModal").classList.remove("hidden");
+    }
+
+    function closeCafeDetailModal() { document.getElementById("cafeDetailModal").classList.add("hidden"); }
+
+    function renderReviews(c) {
+      const list = document.getElementById("detailReviewList");
+      const upsell = document.getElementById("premiumUpsellBanner");
+      const active = document.getElementById("premiumActiveNotice");
+      if (state.isPremium) {
+        upsell.classList.add("hidden");
+        active.classList.remove("hidden");
+        list.innerHTML = c.rawReviews.map(r => `
+          <div class="p-3 bg-purple-50 rounded-xl border text-xs flex flex-col gap-1">
+            <div class="flex justify-between font-bold"><span class="text-purple-900">${r.author} (날것의 평가)</span><span class="text-amber-600">진짜 평점 ★ ${r.rating}</span></div>
+            <p>${r.content}</p>
+          </div>
+        `).join('');
+      } else {
+        upsell.classList.remove("hidden");
+        active.classList.add("hidden");
+        list.innerHTML = c.cleanReviews.map(r => `
+          <div class="p-3 bg-white rounded-xl border text-xs flex flex-col gap-1">
+            <div class="flex justify-between font-bold"><span>${r.author}</span><span class="text-amber-500">★ ${r.rating}</span></div>
+            <p>${r.content}</p>
+          </div>
+        `).join('');
+      }
+    }
+
+    function togglePremiumStatus() {
+      state.isPremium = !state.isPremium;
+      document.getElementById("premiumStatusText").textContent = state.isPremium ? "프리미엄: ON 🔥" : "프리미엄: OFF";
+      renderList();
+      if (state.selectedCafe) renderReviews(state.selectedCafe);
+    }
+
+    function subscribeFreeTrial() { togglePremiumStatus(); }
+
+    function openDirectionsModal() { document.getElementById("directionsModal").classList.remove("hidden"); }
+    function closeDirectionsModal() { document.getElementById("directionsModal").classList.add("hidden"); }
+    function handleArrivalCheckIn() {
+      closeDirectionsModal();
+      closeCafeDetailModal();
+      setTimeout(() => openReviewModal(state.selectedCafe.id), 300);
+    }
+
+    function openReviewModal(id) { document.getElementById("reviewModal").classList.remove("hidden"); }
+    function closeReviewModal() { document.getElementById("reviewModal").classList.add("hidden"); }
+    function selectSamplePhoto() { document.getElementById("photoPreviewText").innerHTML = "📸 현장 좌석 사진 첨부 완료!"; }
+    function handleReviewSubmit(e) {
+      e.preventDefault();
+      state.userPoints += 500;
+      document.getElementById("headerPoints").textContent = `${state.userPoints.toLocaleString()} P`;
+      confetti({ particleCount: 70, spread: 60 });
+      alert("🎉 500P 적립 완료!\n카페 101 실시간 좌석 데이터베이스에 기여해 주셔서 감사합니다.");
+      closeReviewModal();
+    }
+
+    function toggleTagFilter(tag) {
+      if (tag === 'all') state.filteredCafes = [...state.cafes];
+      else if (tag === '#여유좌석') state.filteredCafes = state.cafes.filter(c => c.congestion === 'chill');
+      else state.filteredCafes = state.cafes.filter(c => c.tags.includes(tag));
+      renderList();
+      updateMarkers();
+    }
+
+    function setAppMode(m) {
+      document.getElementById("consumerView").classList.toggle("hidden", m === 'owner');
+      document.getElementById("ownerView").classList.toggle("hidden", m !== 'owner');
+    }
+
+    function resetToHome() { setAppMode('consumer'); toggleTagFilter('all'); }
+    function simulateFullCafePopup() { showFullAlternativePopup(state.cafes[1]); }
+  </script>
+</body>
+</html>
